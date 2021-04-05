@@ -27,6 +27,7 @@
 ## Problem analysis
 * Session granularity is wrong for most use cases
 * Automatic session saving comes with a lot of pitfalls
+    * Links to the Appendix A section?
 * Sessions work as long as you don't use them too much
 * "This is the consequence of having such a simple session API" - yonran @ StackOverflow - https://stackoverflow.com/a/5885665/6098312
 
@@ -52,3 +53,7 @@
 ## Example implementations
 * Separate shopping cart API + association in session
 * Separate shopping cart API + immutable session via JWT + client-side association
+
+## Appendix A: how express.js sessions work under the hood
+* Overwriting of res.end() directly and of res.writeHead() via `on-headers` package
+* Headers sent immediately, session commit on .end()
