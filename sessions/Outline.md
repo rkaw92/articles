@@ -38,7 +38,7 @@
     * This can lead to domain logic leaking out into infrastructural constructs
     * Expiry is harder
     * This can be a good solution if you just need CSRF tokens and nothing else in the session
-    * This is a bad idea for rich stateful applications because it usually precludes idempotence from the start
+    * This is a bad idea for rich stateful applications because it usually precludes idempotence from the start and results in an inconsistent view of the session state
 * Domain state associated with session
     * Session object only stores authorization and associations
     * Separate domain objects
