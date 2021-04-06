@@ -38,6 +38,8 @@ From the developer's point of view, interacting with the session is as simple as
 
 Practicioners of object-oriented modelling disciplines such as Domain-Driven Design will identify the above piece of code as exhibiting an [anemic domain model](https://www.martinfowler.com/bliki/AnemicDomainModel.html), where business logic is commonly placed in a "controller" rather than in methods of an object that encapsulates the data. On the other hand, it is definitely possible to [instantiate behavior-rich objects based on session state](https://github.com/auchenberg/nodejs-shopping-cart/blob/f59cb09679bd5c5ab9a05849223de56fd3bd9ee3/routes/index.js#L23), so this is not a defining feature of all session-based code - just an incidental property.
 
+#### Defining the session programming model
+
 If we were to distill this session programming model into a sentence, it could sound like this:
 > Sessions allow the programmer to retrieve a complete state object associated with the session ID and optionally overwrite it with a new, modified version.
 
@@ -61,8 +63,10 @@ Let us construct a conceptual model of how the session infrastructure operates, 
 
 Developers familiar with SQL (or database work in general) will notice that this is a [read-modify-write](https://www.2ndquadrant.com/en/blog/postgresql-anti-patterns-read-modify-write-cycles/) cycle, which is naturally prone to race conditions: if two concurrent handler executions read the same state, each applies their update, and then both write the state back to the store, *atomicity and consistency* together guarantee that only one of these two versions will remain. From the user's point of view, both updates are successful, but the changes from one of them are overwritten by the other - the last writer wins. Thanks for nothing, AC!
 
+#### Isolation and concurrency
+
 We can say that session semantics exhibit some level of isolation - in that each handler gets its own copy of the session data to work with, and in-memory modifications of the object do not "leak" into other handlers. At the same time, we are missing concurrency control - a crucial component of higher isolation levels, such as [serializable isolation](https://en.wikipedia.org/wiki/Serializability).
 
 **Concurrency** is the complexity that the session facade hides, and also the source of most session-related problems. It is hardly a new topic in programming - the [1981 Jim Gray paper](http://jimgray.azurewebsites.net/papers/thetransactionconcept.pdf), which describes what a database transaction should look like, does so largely in terms of practicality under conditions of concurrency.
 
-### Session-related issues: an example
+## Session-related issues: an example
