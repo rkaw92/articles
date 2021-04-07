@@ -73,6 +73,8 @@ Going further, we are going to explore two general approaches to handling concur
 
 ## Session-related issues: an example
 
+### Triggering a race condition
+
 In order to make triggering race conditions simpler, we're going to modify our previous script so that a POST request handler takes much longer to finish. This is going to increase the time window in which the *second* handler invocation can read the session state, before both concurrent invocations write their new state back, one replacing the other. In production-grade code, we [obviously](https://thedailywtf.com/articles/The-Slow-Down-Loop) would not have an explicit delay, making the issue harder to observe. This makes it even more important to be aware of the possibility, to save ourselves from having to chase down a phantom bug.
 
 We add a deliberate wait ([see the full source code for a runnable version](./code/express-session-simple-delay.js)):
@@ -125,3 +127,10 @@ Now, a look at `/cart` will most likely show:
 ```
 
 In reality, it could be one or the other - the operations that a real handler implementation performs could take a variable duration of time, so there's no telling which of the two handlers would finish first in an actual application. What is certain is this: **our application has a bug that impacts the users**.
+
+### Examples in the wild
+Concurrency bugs related to sessions are not just a theoretical issue that's only reproducible in a lab setting. Here are some problems that users typically encounter, along with the attempted solutions:
+* https://stackoverflow.com/questions/5883821/node-js-express-session-problem
+* https://stackoverflow.com/questions/28602214/node-express-concurrency-issues-when-using-session-to-store-state
+
+
