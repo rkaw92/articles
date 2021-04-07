@@ -65,8 +65,63 @@ Developers familiar with SQL (or database work in general) will notice that this
 
 #### Isolation and concurrency
 
-We can say that session semantics exhibit some level of isolation - in that each handler gets its own copy of the session data to work with, and in-memory modifications of the object do not "leak" into other handlers. At the same time, we are missing concurrency control - a crucial component of higher isolation levels, such as [serializable isolation](https://en.wikipedia.org/wiki/Serializability).
+In terms of ACID, we can say that session semantics exhibit some level of isolation - in that each handler gets its own copy of the session data to work with, and in-memory modifications of the object do not "leak" into other handlers. Changes to session state are visible only after one handler saves the session and another loads it. At the same time, we are missing concurrency control - a key piece that would allow us to avoid *lost updates*.
 
 **Concurrency** is the complexity that the session facade hides, and also the source of most session-related problems. It is hardly a new topic in programming - the [1981 Jim Gray paper](http://jimgray.azurewebsites.net/papers/thetransactionconcept.pdf), which describes what a database transaction should look like, does so largely in terms of practicality under conditions of concurrency.
 
+Going further, we are going to explore two general approaches to handling concurrency (as applicable to sessions) that preserve consistency, as well as take a look at other solutions which make different trade-offs. But first, let us try and reproduce some concurrency issues ourselves, if only to see what we're up against.
+
 ## Session-related issues: an example
+
+In order to make triggering race conditions simpler, we're going to modify our previous script so that a POST request handler takes much longer to finish. This is going to increase the time window in which the *second* handler invocation can read the session state, before both concurrent invocations write their new state back, one replacing the other. In production-grade code, we [obviously](https://thedailywtf.com/articles/The-Slow-Down-Loop) would not have an explicit delay, making the issue harder to observe. This makes it even more important to be aware of the possibility, to save ourselves from having to chase down a phantom bug.
+
+We add a deliberate wait ([see the full source code for a runnable version](./code/express-session-simple-delay.js)):
+```js
+function delay(durationMS) {
+    return new Promise(function(resolve) {
+        setTimeout(resolve, durationMS);
+    });
+}
+
+// ...
+
+app.post('/add-to-cart/:item', async function(req, res) {
+    const item = req.params.item;
+    if (!req.session.cart) {
+        req.session.cart = {};
+    }
+    // Simulate doing some time-consuming work - fetching prices, reserving wares in stock, etc.
+    await delay(HANDLER_DELAY_MS);
+    // Increment item quantity by 1, defaulting initial state to 0:
+    req.session.cart[item] = (req.session.cart[item] || 0) + 1;
+    res.json({
+        shoppingCart: req.session.cart
+    });
+});
+```
+
+Now, if we issue two concurrent POST requests within our time window like this, in the browser's DevTools JavaScript console:
+```js
+fetch('/add-to-cart/mug', { method: 'POST', credentials: 'same-origin' });
+fetch('/add-to-cart/mug', { method: 'POST', credentials: 'same-origin' });
+```
+
+Quite unsurprisingly, both responses only report a quantity of 1 in the cart:
+```json
+{"shoppingCart":{"mug":1}}
+```
+
+The full source code includes another path, `/cart`, which can be viewed from the browser to inspect the final state of the cart, after both requests have finished.
+
+Similarly, if the requests were for different items, only one of them would end up in the cart, which is never what the user wants:
+```js
+fetch('/add-to-cart/phone', { method: 'POST', credentials: 'same-origin' });
+fetch('/add-to-cart/charger', { method: 'POST', credentials: 'same-origin' });
+```
+
+Now, a look at `/cart` will most likely show:
+```json
+{"shoppingCart":{"charger":1}}
+```
+
+In reality, it could be one or the other - the operations that a real handler implementation performs could take a variable duration of time, so there's no telling which of the two handlers would finish first in an actual application. What is certain is this: **our application has a bug that impacts the users**.
