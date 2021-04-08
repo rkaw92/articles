@@ -129,8 +129,49 @@ Now, a look at `/cart` will most likely show:
 In reality, it could be one or the other - the operations that a real handler implementation performs could take a variable duration of time, so there's no telling which of the two handlers would finish first in an actual application. What is certain is this: **our application has a bug that impacts the users**.
 
 ### Examples in the wild
-Concurrency bugs related to sessions are not just a theoretical issue that's only reproducible in a lab setting. Here are some problems that users typically encounter, along with the attempted solutions:
+Concurrency bugs related to sessions are not just a theoretical issue that's only reproducible in a lab setting. Here are some problems that users typically encounter, along with attempted solutions:
 * https://stackoverflow.com/questions/5883821/node-js-express-session-problem
 * https://stackoverflow.com/questions/28602214/node-express-concurrency-issues-when-using-session-to-store-state
 
+All of the troublesome examples above refer to a particular stack - Node.js + express. At the same time, sessions are not a novel concept and we'd expect existing libraries and frameworks to have solved the concurrency problem by now.
 
+## A simple solution
+Take PHP, for instance. PHP is a Web development language that owes much of its adoption to the breadth of built-in functionality: everything from input processing to database connectivity is provided out-of-the-box. How does this once-popular language handle session state?
+
+The [default session save handler](https://www.php.net/manual/en/session.configuration.php#ini.session.save-handler) in PHP is `files`. This means that a directory in the server's filesystem is used to store session data, one file per session. It is not very practical in a clustered application with many server processes running on different hosts, but this implementation dates back to a simpler time, when the default deployment scenario was a single host, plus perhaps a failover host in an "enterprise" setting (remember [LAMP](https://en.wikipedia.org/wiki/LAMP_(software_bundle))?).
+
+Having the files stored locally confers an advantage: since the operating system controls all filesystem access, it can prevent concurrent read-write cycles by using **locking**. Indeed, PHP's default session storage back-end locks the session file for *exclusive access* throughout the request handling process. As a consequence, [only one request can be processed at a time with a given session ID](https://ma.ttias.be/php-session-locking-prevent-sessions-blocking-in-requests/), which reduces performance - to the point that some developers decide they must circumvent the locking, possibly sacrificing correctness.
+
+When using locks of any kind, it is imperative that the lock be kept for only as long as necessary. Specifically, session locks are supposed to guard the session data against corruption. Therefore, the simplest way to increase performance is to [release the lock](https://www.php.net/manual/en/function.session-write-close.php) as soon as session manipulation is finished:
+```php
+<?php
+// Lock the session and populate superglobal variable $_SESSION:
+// (This may not be necessary, depending on the option `session.auto_start` in php.ini)
+session_start();
+// Use session variables - append the currently-viewed product's ID to "last viewed":
+array_unshift($_SESSION["last_viewed_products"], $_GET["product_id"]);
+// We're done with the session: write and release the lock.
+session_write_close();
+// Render the product page, issuing additional queries and doing other time-consuming
+//  tasks, which now do not extend the lock duration:
+ProductView::render();
+```
+
+Note that PHP does not distinguish between read-only (shared) locks and read-write locks for sessions - every lock is exclusive. It is possible, however, to request an immediate session lock release to increase performance in case we're only interested in reading the session state, not writing it (supported since PHP 7). This is useful e.g. for authorization:
+```php
+<?php
+session_start([
+    'read_and_close'  => true,
+]);
+if (!$_SESSION['isAdmin']) {
+    http_response_code(403);
+    throw new Exception('This page requires special permissions to access');
+}
+```
+
+### Differences between implementations
+Nowadays, PHP supports many different implementations of session storage. Each individual module may or may not implement locking. For example:
+* [The memcached extension supports session locking](https://www.php.net/manual/en/memcached.configuration.php#ini.memcached.sess-locking), and defaults it to enabled (`memcached.sess_locking = On`)
+* [phpredis supports session locking](https://github.com/phpredis/phpredis#session-locking) in a leader-follower topology, but it defaults to disabled and has to be enabled by `redis.session.locking_enabled = 1`
+
+There doesn't seem to be a well-established SQL-based session handler for PHP, so most CMSes and blog platforms (Drupal, WordPress) rely on own modules and plug-ins with various features and assumptions.
