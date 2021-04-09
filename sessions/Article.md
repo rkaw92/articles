@@ -184,3 +184,42 @@ Nowadays, PHP supports many different implementations of session storage. Each i
 
 There doesn't seem to be a well-established SQL-based session handler for PHP, so most CMSes and blog platforms (Drupal, WordPress) rely on own modules and plug-ins with various features and assumptions.
 
+### Excluding routes from session logic
+Since lock acquisition and data loading only happens in PHP after `session_start()`, we can be selective about what files ("routes") should invoke session logic. Specifically, publicly-accessible routes will usually not need to refer to any session state, and can skip the locking altogether. This is doubly important in case assets are served via PHP to an asynchronous single-page app - for example, dynamically-generated images, or data that is resolved and fetched in parallel, like user profiles, movie metadata or product recommendations.
+
+There's a lesson here: whether our application is suffering from poor performance due to locking, or from lost updates due to race conditions with no locking, minimizing the set of routes that receive the session data should help. We've seen how to achieve this in PHP. Various Web frameworks for Node.js also enable the developer to specify which routes should trigger the session *middleware* and which shouldn't.
+
+Here is a modernized `express-session` example based on an old [StackOverflow answer](https://stackoverflow.com/questions/15877342/nodejs-express-apply-session-middleware-to-some-routes) that demonstrates how to run sessions for one route only:
+```js
+const sessions = require('express-session');
+const sessionMiddleware = sessions({
+    // pass options here
+});
+
+app.get('/your/route/here', sessionMiddleware, function(req, res){
+    // code for route handler goes here
+});
+```
+
+A more recent Web framework, [fastify.js](https://www.fastify.io/), allows us to install a session middleware within a *scope* thanks to its *plug-in system*. This isolates the effects of the middleware to the routes in the same scope ([see full example](./code/fastify-session-two-routes-only.js)):
+```js
+app.register(async function(scope) {
+    scope.register(sessions, {
+        secret: SESSION_SECRET,
+        cookie: {
+            // Note: this is for development only because we run on plain-text HTTP.
+            secure: false
+        }
+    });
+    scope.post('/add-to-cart/:item', async function(req, res) {
+        // handler code here
+    });
+    scope.get('/cart', async function(req, res) {
+       // another handler that uses session data
+    });
+});
+
+app.get('/no-sessions', async function(req, res) {
+    // handler that has no req.session and doesn't load session data
+});
+```
