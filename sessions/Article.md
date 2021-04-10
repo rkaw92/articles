@@ -221,6 +221,8 @@ app.register(async function(scope) {
 });
 
 app.get('/no-sessions', async function(req, res) {
-    // handler that has no req.session and doesn't load session data
+    // handler that has no req.session and doesn't load/overwrite session data
 });
 ```
+
+It should be noted, however, that in case of the frameworks mentioned above, this only reduces the likelihood of session data being overwritten. To make matters worse, at the time of writing, `fastify-session` has an [overly eager change detection function](https://github.com/SerayaEryn/fastify-session/blob/e201f78fc9d7bd33c6f2e84988be7c8af4b5a8a3/lib/fastifySession.js#L198), which causes a session re-save (overwrite) each time for sessions with at least one variable set.

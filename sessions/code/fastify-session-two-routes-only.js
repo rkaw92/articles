@@ -23,7 +23,11 @@ app.register(async function(scope) {
             // If you omit this option, session cookies will not work on localhost,
             //  unless you connect via an HTTPS reverse proxy.
             secure: false
-        }
+        },
+        // Avoid saving empty session objects. Due to fastify-session's change detection logic,
+        //  this does not prevent blind overwriting of already-populated sessions.
+        // There is no "resave: false" option as in express-session.
+        saveUninitialized: false
     });
     // Trigger this handler by e.g. POST /add-to-cart/mug.
     // Example:
