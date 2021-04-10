@@ -28,6 +28,7 @@ app.post('/add-to-cart/:item', function(req, res) {
     }
     // Increment item quantity by 1, defaulting initial state to 0:
     req.session.cart[item] = (req.session.cart[item] || 0) + 1;
+    // Send updated state to the client as acknowledgement:
     res.json({
         shoppingCart: req.session.cart
     });
